@@ -1,4 +1,5 @@
 import ts = require('typescript');
+import {Schema, ModelProperties, ModelSettings, PropertyDefinition} from 'loopback-datasource-juggler/types/model';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -81,16 +82,16 @@ function getPropertyTsType(prop: any): ts.TypeReferenceNode {
     let t;
     switch (prop.type) {
         case 'String':
-            t=  'String';
+            t=  'string';
             break;
         case 'Number':
-            t=  'Number';
+            t=  'number';
             break;
         case 'Date':
             t=  'Date';
             break;
         case 'Boolean':
-            t=  'Boolean';
+            t=  'boolean';
             break;
         default:
             throw new Error('Unknown type ' + prop.type);
@@ -114,10 +115,10 @@ function getPropertyDecorators(prop: any, key: string): ts.Decorator[] {
     return decorators;
 }
 
-function getModelClass(json: any): ts.Node[] {
+function getModelClass(json: Schema): ts.Node[] {
     const name: string = json.name;
     const members: ts.ClassElement[] = [];
-    json.properties.forEach((v: any) => {
+    Object.values(json.properties).forEach((v: PropertyDefinition) => {
         const prop = ts.createProperty(
             undefined,
             [],
@@ -170,7 +171,7 @@ function getModelImport(): ts.ImportDeclaration {
     return namedImports;
 }
 
-export function CreateTsClass(schemaDef: any) {
+export function CreateClass(schemaDef: Schema) {
 /*    console.log(JSON.stringify(schemaDef));*/
     try {
         return nodeTexts([...getModelClass(schemaDef)]).join('\n');

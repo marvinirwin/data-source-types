@@ -6,15 +6,18 @@
 import { window, commands, ExtensionContext } from 'vscode';
 import {Connector, DiscoveryConnectors} from "./connector";
 import {DataSource} from "loopback-datasource-juggler";
-import {CreateTsClass} from './typescript';
 import * as vscode from "vscode";
 import * as path from "path";
+import {CreateClass} from "./typescript";
 
 const npm = require("npm");
 const fs = require('fs-extra');
 
 const defaultFile = '.DataSourceTypes.json';
 export function resolveBasicFilename(fn=defaultFile) {
+	if (!vscode.workspace.workspaceFolders) {
+	    throw new Error('Please open a project');
+	}
     if (!vscode.workspace.workspaceFolders || !vscode.workspace.workspaceFolders.length) {
     	console.log("No workspace folders");
     	return '/Users/frodo/Desktop/vscode/data-source-types/' + fn;
@@ -27,10 +30,21 @@ export function resolveBasicFilename(fn=defaultFile) {
 }
 export const defaultModelFolder = 'models';
 
+enum SupportedLanguages {
+    typescript= 'TYPESCRIPT',
+	go= 'GO',
+	cSharp = 'C#',
+	java='JAVA',
+	kotlin='KOTLIN',
+	cPlusPlus='C++',
+	javascript='JAVASCRIPT',
+	python='PYTHON',
+}
+
 interface Config {
     modelFolder: string | undefined;
     dataSources: {[key: string]: KV};
-
+    language:SupportedLanguages
 }
 interface KV {
 	name: string;
@@ -49,46 +63,58 @@ export function activate(context: ExtensionContext) {
 /*		const options: { [key: string]: (context: ExtensionContext) => Promise<void> } = {
 		};*/
         // first ask which ds you want
-		const connector = await window.showQuickPick(DiscoveryConnectors);
-		if (!connector) {return}
+        try{
+			const connector = await window.showQuickPick(DiscoveryConnectors);
+			if (!connector) {return}
 
-		const dsName = await window.showInputBox({prompt: 'Data Source Name', placeHolder: 'myDataSource'});
-		const dsSettings: KV = {name: dsName || ''};
-		if (!dsName) return;
+			const dsName = await window.showInputBox({prompt: 'Data Source Name', placeHolder: 'myDataSource'});
+			const dsSettings: KV = {name: dsName || ''};
+			if (!dsName) return;
 
-		for (let i = 0; i < connector.inputs.length; i++) {
-			const input = connector.inputs[i];
-			dsSettings[input] = await window.showInputBox({prompt: input, placeHolder: input});
+			for (let i = 0; i < connector.inputs.length; i++) {
+				const input = connector.inputs[i];
+				dsSettings[input] = await window.showInputBox({prompt: input, placeHolder: input});
+			}
+			writeNewDsConfig(resolveBasicFilename(), dsSettings);
+		}catch(e) {
+        	vscode.window.showErrorMessage(e);
 		}
-		writeNewDsConfig(resolveBasicFilename(), dsSettings);
 	}));
 
 	context.subscriptions.push(commands.registerCommand('DataSourceTypes.DiscoverTypes', async () => {
-	    await discoverTypes();
+		try {
+			await discoverTypes();
+		}catch(e) {
+		    vscode.window.showErrorMessage(e);
+		}
 	}));
 }
 
 const dir = 'discovered-types';
 export async function discoverTypes() {
-    fs.ensureDirSync(resolveBasicFilename(dir));
-	const dsSettings = await loadAllDataSources();
-	console.log(`returned settings length: ${dsSettings.length}`);
-	for (let i = 0; i < dsSettings.length; i++) {
-		const dsSetting = dsSettings[i];
-		if (!dsSetting.ds) {
-			console.log(`Datasource not found in settings ${JSON.stringify(dsSettings)}`);
-			continue;
+    try {
+		fs.ensureDirSync(resolveBasicFilename(dir));
+		const dsSettings = await loadAllDataSources();
+		console.log(`returned settings length: ${dsSettings.length}`);
+		for (let i = 0; i < dsSettings.length; i++) {
+			const dsSetting = dsSettings[i];
+			if (!dsSetting.ds) {
+				console.log(`Datasource not found in settings ${JSON.stringify(dsSettings)}`);
+				continue;
+			}
+			console.log(`Generating ds models for ${dsSetting.name}`);
+			// @ts-ignore
+			const models = await generateDsModels(dsSetting.ds);
+			console.log(`Models length: ${models.length}`);
+			for (let j = 0; j < models.length; j++) {
+				const model = models[j];
+				const fPath = path.join(resolveBasicFilename(dir), model.filename);
+				console.log(`Writing ${fPath}`);
+				fs.writeFileSync(fPath, model.tsClass);
+			}
 		}
-		console.log(`Generating ds models for ${dsSetting.name}`);
-		// @ts-ignore
-		const models = await generateDsModels(dsSetting.ds);
-		console.log(`Models length: ${models.length}`);
-		for (let j = 0; j < models.length; j++) {
-			const model = models[j];
-			const fPath = path.join(resolveBasicFilename(dir), model.filename);
-			console.log(`Writing ${fPath}`);
-			fs.writeFileSync(fPath, model.tsClass);
-		}
+	}catch(e) {
+    	vscode.window.showErrorMessage(e);
 	}
 }
 
@@ -96,26 +122,24 @@ export async function loadAllDataSources(): Promise<DsSettings[]> {
 	console.log(`Loading datasources from file`);
 	// First load the config file
 	if (!fs.existsSync(resolveBasicFilename())) {
-		await window.showErrorMessage(`${resolveBasicFilename()} not found!`);
-		return [];
+	    throw new Error(`${resolveBasicFilename()} not found!`);
 	}
 	const settingsConfig: DsSettings[] = Object.values(JSON.parse(fs.readFileSync(resolveBasicFilename()).toString()).dataSources);
-	console.log(`settingsConfig.length: ${settingsConfig.length}`);
+	window.showInformationMessage(`Loading ${settingsConfig.length} DataSources`);
 	for (let i = 0; i < settingsConfig.length; i++) {
 		const dataSourceSettings = settingsConfig[i];
 		const c = DiscoveryConnectors.find(c => c.name === dataSourceSettings.connector);
 		if (!c) {
-			throw new Error(`Discovery connected not found: ${dataSourceSettings.connector}`);
+			throw new Error(`Connector not found: ${dataSourceSettings.connector}`);
 		}
-		console.log(`Ensuring connector ${c}`);
 		await ensureConnector(c);
 
 		// TODO figure out if this will work
-		console.log(`Connecting to ds ${dataSourceSettings.name}...`);
+		vscode.window.showInformationMessage(`Connecting to ds ${dataSourceSettings.name}...`);
 		dataSourceSettings.ds = new DataSource(dataSourceSettings);
 		dataSourceSettings.ds.connect();
 		await awaitDsConnect(dataSourceSettings.ds);
-		console.log(`Connected to ${dataSourceSettings.name}`);
+		vscode.window.showInformationMessage(`Connected to ${dataSourceSettings.name}`);
 
 	}
 	return settingsConfig;
@@ -146,7 +170,7 @@ export async function generateDsModels(ds: DataSource): Promise<ModelDefStruct[]
 		console.log(JSON.stringify(modelName), null, '\t');
 		// console.log(JSON.stringify(def));
 		// @ts-ignore
-		models.push({schemaDef: modelName, tsClass: CreateTsClass(modelName), filename: modelName.name + '.ts'});
+		models.push({schemaDef: modelName, tsClass: CreateClass(modelName), filename: modelName.name + '.ts'});
 		console.log(`Models length ${models.length}`);
 	}
 
@@ -156,16 +180,16 @@ export async function generateDsModels(ds: DataSource): Promise<ModelDefStruct[]
 
 export function writeNewDsConfig(filename: string, newKv: KV) {
 	const exists =  fs.existsSync(filename);
-	console.log(`${filename} exists: ${exists}`);
+	vscode.window.showInformationMessage(`${filename} exists: ${exists}`);
 	if (exists) {
-		console.log(`${filename} exists`);
+		vscode.window.showInformationMessage(`${filename} exists`);
 		const o: Config = JSON.parse(fs.readFileSync(filename).toString());
 		o.dataSources = o.dataSources || {};
 		o.dataSources[newKv.name] = newKv;
-		console.log(`Writing ${filename} `);
+		vscode.window.showInformationMessage(`Writing ${filename} `);
 		fs.writeFileSync(filename, JSON.stringify(o));
 	}else {
-		console.log(`Writing ${filename} `);
+		vscode.window.showInformationMessage(`Writing ${filename} `);
 		fs.writeFileSync(filename, JSON.stringify({dataSources: [newKv]}));
 	}
 }
@@ -179,9 +203,13 @@ export async function ensureConnector(connector: Connector) {
 	try {
 		 p= require(connector.package.name);
 	} catch(e) {
-	    console.error(e);
-		await npmInstall(connector.package.name);
-		p = require(connector.package.name);
+		try {
+			vscode.window.showErrorMessage(e);
+			await npmInstall(connector.package.name);
+			p = require(connector.package.name);
+		}catch(e) {
+			throw e;
+		}
 	}
 
 
@@ -205,7 +233,7 @@ export function npmInstall(name: string) {
 				console.log(message);
 			});
 		});
-	}))
+	}));
 }
 
 export function awaitDsConnect(ds: DataSource) {

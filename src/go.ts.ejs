@@ -1,0 +1,6 @@
+type <%= className %> struct {
+<% Object.entries(properties).forEach(([key, val]) => { -%>
+<%= key %> <%= val.type %> <%if (val.columnName) { %> <%= `\`db:"${val.columnName}"\`` %> <% } %>
+<% }) -%>
+}
+
