@@ -78,7 +78,7 @@ function nodeText(n: ts.Node): string {
 }
 
 function getPropertyTsType(prop: any): ts.TypeReferenceNode {
-    let isOptional = prop.nullable === 'YES' ? '|undefined' : '';
+    let isOptional = prop.nullable === 'YES' ? /*'|undefined'*/ '' : '';
     let t;
     switch (prop.type) {
         case 'String':
