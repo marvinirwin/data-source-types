@@ -3,7 +3,7 @@
 	"name": "data-source-types",
 	"displayName": "data-source-types",
 	"description": "Creates typescript definition of types from a data source",
-	"version": "0.1.0",
+	"version": "0.3.0",
 	"engines": {
 		"vscode": "^1.31.0"
 	},
