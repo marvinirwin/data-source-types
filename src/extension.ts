@@ -31,17 +31,17 @@ export function resolveBasicFilename(fn = defaultFile) {
 export const defaultModelFolder = 'models';
 
 enum SupportedLanguages {
-    typescript = 'TYPESCRIPT',
-    go = 'GO',
-    cSharp = 'C#',
-    java = 'JAVA',
-    kotlin = 'KOTLIN',
-    cPlusPlus = 'C++',
-    javascript = 'JAVASCRIPT',
-    python = 'PYTHON',
+    typescript = 'typescript',
+    go = 'go',
+    cSharp = 'c#',
+    java = 'java',
+    kotlin = 'kotlin',
+    cPlusPlus = 'c++',
+    javascript = 'javascript',
+    python = 'python',
 }
 
-function delim(d: string) {
+function delim(d: string): (arg0: string) => string {
     return function kebab(s: string) {
         return s.replace(/([A-Z])([A-Z])/g, `$1${d}$2`)
             .replace(/([a-z])([A-Z])/g, `$1${d}$2`)
@@ -49,6 +49,7 @@ function delim(d: string) {
             .toLowerCase();
     };
 }
+
 const underscore = delim('_');
 const kebab = delim('-');
 
@@ -66,11 +67,11 @@ function pascal(s: string) {
 }
 
 enum TextCase {
-    PASCAL='pascal',
-    CAMEL='camel',
-    KEBAB='kebab',
-    UNDERSCORE='underscore',
-    SNAKE='snake',
+    PASCAL = 'pascal',
+    CAMEL = 'camel',
+    KEBAB = 'kebab',
+    UNDERSCORE = 'underscore',
+    SNAKE = 'snake',
 }
 
 function transformString(s: string, c: TextCase) {
@@ -99,9 +100,9 @@ function transformString(s: string, c: TextCase) {
 
 interface Config {
     modelFolder?: string | undefined;
-    filenameCase?: string | undefined;
-    classCase?: string | undefined;
-    propertyCase: string | undefined;
+    filenameCase?: TextCase | undefined;
+    classCase?: TextCase | undefined;
+    propertyCase?: TextCase | undefined;
     dataSources?: { [key: string]: KV };
     schemas?: string[];
     language?: SupportedLanguages;
@@ -110,15 +111,24 @@ interface Config {
 interface KV {
     name: string;
     schemas?: string[];
-
     [key: string]: any;
+}
+
+function toDs(kv: KV) {
+    const o =  {
+        name: kv.name,
+        connector: kv.connector,
+        ds: kv.ds,
+    };
+    Object.assign(o, kv);
+    console.log(o);
+    return o;
 }
 
 interface DsSettings {
     name: string;
     connector: string;
     ds: DataSource | undefined;
-
     [key: string]: any;
 }
 
@@ -178,13 +188,13 @@ export async function discoverTypes() {
     try {
         const p = resolveBasicFilename(dir);
         fs.ensureDirSync(p);
-
         const conf: Config = await loadConfig();
         const globalSchemas = conf.schemas || [];
         const globalFilenameCase: TextCase = conf.filenameCase || TextCase.KEBAB;
         const globalClassCase: TextCase = conf.classCase || TextCase.PASCAL;
         const globalPropertyCase = conf.propertyCase || TextCase.CAMEL;
         const dataSourceList = Object.values(conf.dataSources || {});
+        console.log(dataSourceList);
         vscode.window.showInformationMessage(`Loaded ${dataSourceList.length} DataSources`);
         for (let i = 0; i < dataSourceList.length; i++) {
             try {
@@ -243,8 +253,11 @@ export async function loadConfig(): Promise<Config> {
     if (!fs.existsSync(resolveBasicFilename())) {
         throw new Error(`${resolveBasicFilename()} not found!`);
     }
-    const conf: Config = JSON.parse(fs.readFileSync(resolveBasicFilename()).toString()).dataSources;
-    const settingsConfig: DsSettings[] = Object.values(conf);
+    const conf: Config = JSON.parse(fs.readFileSync(resolveBasicFilename()).toString());
+    if (!conf) {
+        throw new Error(`${resolveBasicFilename()} is undefined`);
+    }
+    const settingsConfig: DsSettings[] = Object.values(conf.dataSources || {}).map(toDs);
     window.showInformationMessage(`Loading ${settingsConfig.length} DataSources`);
     for (let i = 0; i < settingsConfig.length; i++) {
         const dataSourceSettings = settingsConfig[i];
