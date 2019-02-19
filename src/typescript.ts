@@ -4,11 +4,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 
-function TitleCaseToKebabCase(s: string): string {
-    let result = s.replace(/([A-Z])([A-Z])/g, '$1-$2')
-        .replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase();
-    return result;
-}
 function snakeToCamel(s: string){
     return s.replace(/(\_\w)/g, function(m){return m[1].toUpperCase();});
 }
