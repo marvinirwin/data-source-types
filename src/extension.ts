@@ -20,16 +20,12 @@ export function resolveBasicFilename(fn = defaultFile) {
         throw new Error('Please open a project');
     }
     if (!vscode.workspace.workspaceFolders || !vscode.workspace.workspaceFolders.length) {
-        console.log("No workspace folders");
-        return '/Users/frodo/Desktop/vscode/data-source-types/' + fn;
+        throw new Error('Please open a project!');
     }
-    console.log(`First folder ${JSON.stringify(vscode.workspace.workspaceFolders[0].uri)}`);
-    // @ts-ignore
     if (!vscode.workspace.workspaceFolders[0]) {
         return fn;
     }
-    // @ts-ignore
-    return path.join(vscode.workspace.workspaceFolders[0].uri.path, fn);
+    return path.join(vscode.workspace.workspaceFolders[0].uri.fsPath, fn);
 }
 
 export const defaultModelFolder = 'models';
@@ -106,9 +102,12 @@ const dir = 'discovered-types';
 
 export async function discoverTypes() {
     try {
-        fs.ensureDirSync(resolveBasicFilename(dir));
+        const p = resolveBasicFilename(dir)
+        console.log(p);
+        fs.ensureDirSync(p);
+
         const dsSettings = await loadAllDataSources();
-        console.log(`returned settings length: ${dsSettings.length}`);
+        vscode.window.showInformationMessage(`Loaded ${dsSettings.length} DataSources`);
         for (let i = 0; i < dsSettings.length; i++) {
             try {
                 const dsSetting = dsSettings[i];
@@ -124,15 +123,16 @@ export async function discoverTypes() {
                         const fPath = path.join(resolveBasicFilename(dir), model.filename);
                         fs.writeFileSync(fPath, model.tsClass);
                     }catch(e) {
-                        vscode.window.showErrorMessage(e);
+                        vscode.window.showErrorMessage(e.Message);
                     }
                 }
             } catch (e) {
-                vscode.window.showErrorMessage(e);
+                vscode.window.showErrorMessage(e.message);
             }
         }
     } catch (e) {
-        vscode.window.showErrorMessage(e);
+        console.log(e);
+        vscode.window.showErrorMessage(e.message);
     }
     vscode.window.showInformationMessage(`Done!`);
 }
@@ -236,18 +236,19 @@ export async function ensureConnector(connector: Connector) {
 
 export function npmInstall(name: string) {
     return new Promise(((resolve, reject) => {
+        vscode.window.showInformationMessage(`Installing ${name}`);
         npm.load({
             loaded: false
         }, function (err: Error) {
             if (err) {
                 reject(err);
             }
-            // catch errors
             npm.commands.install([name], function (er: Error, data: any) {
                 if (er) {
                     reject(err);
                 }
-                console.log(data);
+                vscode.window.showInformationMessage(`Installed ${name} successfully`);
+                resolve();
             });
             npm.on("log", function (message: string) {
                 // log the progress of the installation
