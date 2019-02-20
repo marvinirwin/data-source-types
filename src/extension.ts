@@ -107,7 +107,7 @@ export function activate(context: ExtensionContext) {
                 placeHolder: 'myDataSource',
                 value: connector.label
             });
-            const dsSettings: DsSettings = {name: dsName || '', connector: '', ds: undefined};
+            const dsSettings: DsSettings = {name: dsName || '', connector: connector.name, ds: undefined};
             if (!dsName) {
                 return;
             }

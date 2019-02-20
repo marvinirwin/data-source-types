@@ -86,6 +86,7 @@ function getPropertyTsType(prop: any): ts.TypeReferenceNode {
             t=  'Date';
             break;
         case 'Boolean':
+        case 'Binary':
             t=  'boolean';
             break;
         default:
