@@ -25,6 +25,7 @@ suite("Extension Tests", async function () {
             host: 'localhost',
             username: 'root',
             password: 'my-secret-pw',
+            ds: undefined
         });
     });
     test('should be able to discover the types of the datasource specified in the config', async () => {

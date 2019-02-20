@@ -110,14 +110,14 @@ function getPropertyDecorators(prop: any, key: string): ts.Decorator[] {
     return decorators;
 }
 
-function getModelClass(json: Schema): ts.Node[] {
+function getModelClass(json: Schema, classTransform: (s: string) => string, propertyTransform: (s: string) => string): ts.Node[] {
     const name: string = json.name;
     const members: ts.ClassElement[] = [];
     Object.values(json.properties).forEach((v: PropertyDefinition) => {
         const prop = ts.createProperty(
             undefined,
             [],
-            snakeToCamel(v.columnName),
+            propertyTransform(v.columnName),
             undefined,
             getPropertyTsType(v),
             undefined
@@ -141,10 +141,10 @@ function getModelClass(json: Schema): ts.Node[] {
     const ext = ts.createHeritageClause(ts.SyntaxKind.ExtendsKeyword, [expres]);*/
 
     // const cls = ts.createClassDeclaration([getModelDecorator()], [], json.name, [], [ext], members);
-    ts.createClassExpression([], json.name, [], [/*ext*/], members);
+    ts.createClassExpression([], classTransform(json.name), [], [/*ext*/], members);
     const classDec = ts.createClassDeclaration([/*getModelDecorator(json)*/], [
         ts.createToken(ts.SyntaxKind.ExportKeyword),
-    ], json.name, [], [/*ext*/], members);
+    ], classTransform(json.name), [], [/*ext*/], members);
     return [classDec];
 }
 
@@ -166,10 +166,10 @@ function getModelImport(): ts.ImportDeclaration {
     return namedImports;
 }
 
-export function CreateClass(schemaDef: Schema) {
+export function CreateClass(schemaDef: Schema, classTransform: (s: string) => string, propertyTransform: (s: string) => string) {
 /*    console.log(JSON.stringify(schemaDef));*/
     try {
-        return nodeTexts([...getModelClass(schemaDef)]).join('\n');
+        return nodeTexts([...getModelClass(schemaDef, classTransform, propertyTransform)]).join('\n');
     }catch(e) {
         console.error(e);
         return '';

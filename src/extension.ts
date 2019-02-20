@@ -9,6 +9,7 @@ import {DataSource} from "loopback-datasource-juggler";
 import * as vscode from "vscode";
 import * as path from "path";
 import {CreateClass} from "./typescript";
+import * as changeCase from 'change-case';
 
 const npm = require("npm");
 const fs = require('fs-extra');
@@ -41,30 +42,6 @@ enum SupportedLanguages {
     python = 'python',
 }
 
-function delim(d: string): (arg0: string) => string {
-    return function kebab(s: string) {
-        return s.replace(/([A-Z])([A-Z])/g, `$1${d}$2`)
-            .replace(/([a-z])([A-Z])/g, `$1${d}$2`)
-            .replace(/[\s_]+/g, `${d}`)
-            .toLowerCase();
-    };
-}
-
-const underscore = delim('_');
-const kebab = delim('-');
-
-function camel(s: string) {
-    return s.replace(/(?:^\w|[A-Z]|\b\w)/g, function (letter, index) {
-        return index === 0 ? letter.toLowerCase() : letter.toUpperCase();
-    }).replace(/\s+/g, '');
-}
-
-function pascal(s: string) {
-    return s.replace(/(\w)(\w*)/g,
-        function (g0, g1, g2) {
-            return g1.toUpperCase() + g2.toLowerCase();
-        });
-}
 
 enum TextCase {
     PASCAL = 'pascal',
@@ -72,57 +49,38 @@ enum TextCase {
     KEBAB = 'kebab',
     UNDERSCORE = 'underscore',
     SNAKE = 'snake',
+    NONE='none'
 }
 
 function transformString(s: string, c: TextCase) {
-    let r = '';
+    const modS = s.replace(/[_\-]/g, ' ');
     switch (c) {
+        case TextCase.NONE:
+            return s;
         case TextCase.CAMEL:
-            r = camel(s);
-            break;
+            return changeCase.camelCase(modS);
         case TextCase.PASCAL:
-            r = pascal(s);
-            break;
+            return changeCase.pascalCase(modS);
         case TextCase.KEBAB:
-            r = kebab(s);
-            break;
+            return changeCase.kebabCase(modS);
         case TextCase.UNDERSCORE:
         case TextCase.SNAKE:
-            r = underscore(r);
-            break;
+            return changeCase.snakeCase(modS);
         default:
             throw new Error(`Unknown case ${c}`);
     }
 
-    return r;
-}
 
+}
 
 interface Config {
     modelFolder?: string | undefined;
     filenameCase?: TextCase | undefined;
     classCase?: TextCase | undefined;
     propertyCase?: TextCase | undefined;
-    dataSources?: { [key: string]: KV };
+    dataSources?: { [key: string]: DsSettings };
     schemas?: string[];
     language?: SupportedLanguages;
-}
-
-interface KV {
-    name: string;
-    schemas?: string[];
-    [key: string]: any;
-}
-
-function toDs(kv: KV) {
-    const o =  {
-        name: kv.name,
-        connector: kv.connector,
-        ds: kv.ds,
-    };
-    Object.assign(o, kv);
-    console.log(o);
-    return o;
 }
 
 interface DsSettings {
@@ -149,7 +107,7 @@ export function activate(context: ExtensionContext) {
                 placeHolder: 'myDataSource',
                 value: connector.label
             });
-            const dsSettings: KV = {name: dsName || ''};
+            const dsSettings: DsSettings = {name: dsName || '', connector: '', ds: undefined};
             if (!dsName) {
                 return;
             }
@@ -194,7 +152,6 @@ export async function discoverTypes() {
         const globalClassCase: TextCase = conf.classCase || TextCase.PASCAL;
         const globalPropertyCase = conf.propertyCase || TextCase.CAMEL;
         const dataSourceList = Object.values(conf.dataSources || {});
-        console.log(dataSourceList);
         vscode.window.showInformationMessage(`Loaded ${dataSourceList.length} DataSources`);
         for (let i = 0; i < dataSourceList.length; i++) {
             try {
@@ -213,15 +170,16 @@ export async function discoverTypes() {
                 if (schemas && schemas.length) {
                     for (let j = 0; j < schemas.length; j++) {
                         const schema = schemas[j];
-                        models.push(...(await generateDsModels(dataSource.ds, schema)));
+                        models.push(...(await generateDsModels(dataSource.ds, s => transformString(s, localClassCase || globalClassCase), s => transformString(s, localPropertyCase || globalPropertyCase),  schema)));
                     }
                 } else {
-                    models.push(...(await generateDsModels(dataSource.ds)));
+                    models.push(...(await generateDsModels(dataSource.ds, s => transformString(s, localClassCase || globalClassCase), s => transformString(s, localPropertyCase || globalPropertyCase))));
                 }
                 vscode.window.showInformationMessage(`Writing ${models.length} models from ${dataSource.name}`);
                 for (let j = 0; j < models.length; j++) {
                     const model = models[j];
-                    model.filename = transformString(model.schemaDef.name, localFilenameCase || globalFilenameCase);
+                    // TODO change this once support for multiple file types is added
+                    model.filename = transformString(model.schemaDef.name, localFilenameCase || globalFilenameCase) + ".ts";
                 }
                 writeModels(models);
             } catch (e) {
@@ -257,21 +215,21 @@ export async function loadConfig(): Promise<Config> {
     if (!conf) {
         throw new Error(`${resolveBasicFilename()} is undefined`);
     }
-    const settingsConfig: DsSettings[] = Object.values(conf.dataSources || {}).map(toDs);
-    window.showInformationMessage(`Loading ${settingsConfig.length} DataSources`);
-    for (let i = 0; i < settingsConfig.length; i++) {
-        const dataSourceSettings = settingsConfig[i];
-        const c = DiscoveryConnectors.find(c => c.name === dataSourceSettings.connector);
+    const settingsList: DsSettings[] = Object.values(conf.dataSources || {});
+    window.showInformationMessage(`Loading ${settingsList.length} DataSources`);
+    for (let i = 0; i < settingsList.length; i++) {
+        const settings = settingsList[i];
+        const c = DiscoveryConnectors.find(c => c.name === settings.connector);
         if (!c) {
-            throw new Error(`Connector not found: ${dataSourceSettings.connector}`);
+            throw new Error(`Connector not found: ${settings.connector}`);
         }
         await ensureConnector(c);
 
-        vscode.window.showInformationMessage(`Connecting to ${dataSourceSettings.name}...`);
-        dataSourceSettings.ds = new DataSource(dataSourceSettings);
-        dataSourceSettings.ds.connect();
-        await awaitDsConnect(dataSourceSettings.ds);
-        vscode.window.showInformationMessage(`Successfully connected to ${dataSourceSettings.name}!`);
+        vscode.window.showInformationMessage(`Connecting to ${settings.name}...`);
+        settings.ds = new DataSource(settings);
+        settings.ds.connect();
+        await awaitDsConnect(settings.ds);
+        vscode.window.showInformationMessage(`Successfully connected to ${settings.name}!`);
     }
     return conf;
 }
@@ -282,12 +240,16 @@ interface ModelDefStruct {
     schemaDef: any;
 }
 
-export async function generateDsModels(ds: DataSource, schema?: string): Promise<ModelDefStruct[]> {
+export async function generateDsModels(ds: DataSource, classTransform: (s: string) => string, propertyTransform: (s: string) => string, schema?: string): Promise<ModelDefStruct[]> {
     const modelNames = await ds.discoverModelDefinitions({views: true, schema});
     if (!modelNames) {
         throw new Error('Discovery yielded undefined instead of array of definitions');
     }
-    console.log(`modelNames length: ${modelNames.length}`);
+    if (schema) {
+        vscode.window.showInformationMessage(`${modelNames.length} models found in ${schema}`);
+    } else {
+        vscode.window.showInformationMessage(`${modelNames.length} models found`);
+    }
     if (!modelNames) {
         throw Error('discoverModelDefinitions returned undefined?');
     }
@@ -298,18 +260,16 @@ export async function generateDsModels(ds: DataSource, schema?: string): Promise
         // console.log(JSON.stringify(modelName));
         // @ts-ignore
         modelName.properties = await ds.discoverModelProperties(modelName.name);
-        console.log(JSON.stringify(modelName), null, '\t');
         // console.log(JSON.stringify(def));
         // @ts-ignore
-        models.push({schemaDef: modelName, tsClass: CreateClass(modelName), filename: modelName.name + '.ts'});
-        console.log(`Models length ${models.length}`);
+        models.push({schemaDef: modelName, tsClass: CreateClass(modelName, classTransform, propertyTransform), filename: modelName.name + '.ts'});
     }
 
     console.log(`Returned models length: ${models.length}`);
     return models;
 }
 
-export function writeNewDsConfig(filename: string, newKv: KV) {
+export function writeNewDsConfig(filename: string, newKv: DsSettings) {
     let o: Config;
     console.log(newKv);
     const exists = fs.existsSync(filename);
